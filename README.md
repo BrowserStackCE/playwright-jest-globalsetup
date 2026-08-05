@@ -1,6 +1,58 @@
 # jest-playwright-browserstack
 
-This sample shows how to run [Jest](https://jestjs.io/) + [Playwright](https://playwright.dev/) tests on BrowserStack using the [BrowserStack Node SDK](https://www.npmjs.com/package/browserstack-node-sdk). The SDK reads `browserstack.yml`, fans your tests out across the platforms listed there, starts and stops BrowserStack Local automatically, and reports test status to the BrowserStack dashboard. Your test code stays plain `@playwright/test` + Jest -- no manual `connect()`, no capabilities in code.
+This sample shows how to run [Jest](https://jestjs.io/) + [Playwright](https://playwright.dev/) tests with Global Setup on BrowserStack using the [BrowserStack Node SDK](https://www.npmjs.com/package/browserstack-node-sdk). The SDK reads `browserstack.yml`, fans your tests out across the platforms listed there, starts and stops. If the test requires to capture a particular state from a local run like saving the logged in session and reuse the same session on BrowserStack devices then the globalsetup is required. This repo highlights how to use the globalsetup process to preserve the logged in session and inject it to the BrowserStack Automate sessions.
+
+# Global setup
+
+* In the globalsetup.js file, the session state is captured and stored in a file
+
+    ```
+    
+          // cookies + localStorage
+          await context.storageState({ path: STORAGE_STATE_PATH });
+
+          // bstackdemo keeps username/state in sessionStorage (not covered by storageState)
+          const sessionStorageData = await page.evaluate(() =>
+            JSON.stringify(sessionStorage)
+          );
+          fs.writeFileSync(SESSION_STORAGE_PATH, sessionStorageData);
+
+          // Notified-style session.json
+          const cookies = await context.cookies();
+          fs.writeFileSync(
+            SESSION_PATH,
+            JSON.stringify([{ key: PROJECT_KEY, value: cookies }], null, 2)
+          );
+
+    ```
+
+* The globalsetup file is injected to the session through jest's configuration
+
+  ```
+      module.exports = {
+        rootDir: '.',
+        testMatch: ['**/tests/bstack_sample*.test.js'],
+        globalSetup: './globalsetup.js',
+        globalTeardown: './global-teardown.js',
+        setupFilesAfterEnv: ['./browserSessionSetup.js'],
+        testTimeout: 90 * 1000,
+        verbose: true,
+      };
+
+  ```
+
+* Inject the session storage data through the beforeAll hook [configured in the ./browserSessionSetup.js]
+
+  ```
+      if (fs.existsSync(STORAGE_STATE_PATH)) {
+        contextOptions.storageState = STORAGE_STATE_PATH;
+        console.log(`browserSessionSetup: using storageState from ${STORAGE_STATE_PATH}`);
+      }
+
+      global.context = await global.browser.newContext(contextOptions);
+
+  ```
+* Configure the setupFilesAfterEnv to include the browserSessionSetup.js file so that the hooks are triggered before every test file
 
 ![BrowserStack Logo](https://d98b8t1nnulk5.cloudfront.net/production/images/layout/logo-header.png?1469004780)
 
@@ -32,63 +84,3 @@ Runs the public [bstackdemo.com](https://bstackdemo.com/) add-to-cart scenario a
 ```sh
 npm run sample-test
 ```
-
-## Run Local Test (BrowserStack Local)
-
-Use this when the site under test is on `localhost`, a staging host, or behind a firewall. BrowserStack Local opens a secure tunnel and resolves `bs-local.com` back to **your** machine, so the cloud browser can reach a page only you can serve.
-
-The bundled local test navigates to `http://bs-local.com:45454/` and asserts the page title contains `BrowserStack Local` — so you must have something serving that page on port `45454` first:
-
-1. Serve a matching page locally (any page whose `<title>` contains "BrowserStack Local" satisfies the test):
-
-   ```sh
-   mkdir -p bs-local-site && printf '<!doctype html><title>BrowserStack Local</title><body>OK</body>' > bs-local-site/index.html
-   (cd bs-local-site && python3 -m http.server 45454) &
-   ```
-
-   To test **your own** app instead, serve it on port `45454` (or change the port and the title assertion in `tests/bstack_local_test.test.js`).
-
-2. Set `browserstackLocal: true` in `browserstack.yml`.
-
-3. Run:
-
-   ```sh
-   npm run sample-local-test
-   ```
-
-The SDK starts and stops the BrowserStack Local tunnel for you -- no manual binary download or lifecycle management. The tunnel routes `bs-local.com:45454` to your machine's `localhost:45454`.
-
-## How the SDK changes things
-
-- **One `browserstack.yml`** declares platforms, parallelism, the Local toggle, and reporting; the SDK picks them up automatically.
-- **The SDK runs platforms in parallel for you** -- one Jest run per `(platform x parallelsPerPlatform)` cell, no per-platform branching needed.
-- **The SDK rewrites Playwright launches** -- your test calls `chromium.launch()` and the SDK transparently redirects it to the per-platform browser configured in the yml (`chrome` / `playwright-webkit` / `playwright-firefox`). No `chromium.connect(wss_url)` plumbing.
-- **The SDK starts and stops BrowserStack Local** when `browserstackLocal: true`.
-
-## Repo layout
-
-```
-.
-├── browserstack.yml            # SDK config: credentials, platforms, Local toggle, reporting
-├── package.json                # SDK run scripts + deps
-├── jest.config.js              # sample test config (bstackdemo)
-├── jest.local.config.js        # local test config (bs-local)
-└── tests/
-    ├── bstack_sample.test.js       # bstackdemo add-to-cart scenario
-    └── bstack_local_test.test.js   # BrowserStack Local scenario
-```
-
-## Notes
-
-* View your test results on the [BrowserStack Automate dashboard](https://www.browserstack.com/automate).
-* To test on a different set of browsers, see our [list of supported browsers and platforms](https://www.browserstack.com/list-of-browsers-and-platforms?product=automate).
-* Understand how many parallel sessions you need with the [Parallel Test Calculator](https://www.browserstack.com/automate/parallel-calculator?ref=github).
-
-## Further Reading
-
-- [Jest](https://jestjs.io/)
-- [Playwright](https://playwright.dev/)
-- [BrowserStack documentation for Playwright](https://www.browserstack.com/docs/automate/playwright)
-- [BrowserStack Node SDK](https://www.npmjs.com/package/browserstack-node-sdk)
-
-Happy Testing!

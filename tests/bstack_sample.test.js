@@ -1,28 +1,12 @@
-const { chromium } = require('@playwright/test');
+// Browser + auth lifecycle come from browserSessionSetup.js (setupFilesAfterEnv)
+// after globalsetup.js has written session artifacts. `page` / `browser` /
+// `context` are injected as globals.
 
-// Sample test: add the first product to the cart on bstackdemo.com and verify.
-// Your code calls `chromium.launch()` as usual -- the BrowserStack SDK transparently
-// routes the launch to the per-platform browser configured in browserstack.yml.
 describe('BStackDemo cart', () => {
-  let browser;
-  let context;
-  let page;
-
-  beforeAll(async () => {
-    browser = await chromium.launch();
-  });
-
-  afterAll(async () => {
-    if (browser) await browser.close();
-  });
-
-  beforeEach(async () => {
-    context = await browser.newContext();
-    page = await context.newPage();
-  });
-
-  afterEach(async () => {
-    if (context) await context.close();
+  test('starts already signed in from global setup', async () => {
+    await page.goto('https://bstackdemo.com/');
+    await page.getByText('Logout').waitFor({ state: 'visible' });
+    expect(await page.getByText('Logout').isVisible()).toBe(true);
   });
 
   test('add the first product to the cart', async () => {
